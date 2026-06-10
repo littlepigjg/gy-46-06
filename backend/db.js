@@ -66,6 +66,7 @@ async function initDb() {
       name TEXT NOT NULL,
       frequency TEXT NOT NULL DEFAULT 'daily',
       status TEXT NOT NULL DEFAULT 'active',
+      default_strategy TEXT NOT NULL DEFAULT 'dom',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       last_screenshot_at DATETIME
     );
@@ -77,12 +78,40 @@ async function initDb() {
       file_name TEXT NOT NULL,
       width INTEGER,
       height INTEGER,
+      type TEXT NOT NULL DEFAULT 'fullpage',
+      parent_id INTEGER,
+      strategy TEXT,
+      region_x INTEGER,
+      region_y INTEGER,
+      region_width INTEGER,
+      region_height INTEGER,
+      is_manual_region INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (url_id) REFERENCES urls(id) ON DELETE CASCADE
+      FOREIGN KEY (url_id) REFERENCES urls(id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_id) REFERENCES screenshots(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS screenshot_regions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      screenshot_id INTEGER NOT NULL,
+      strategy TEXT NOT NULL,
+      region_x INTEGER NOT NULL,
+      region_y INTEGER NOT NULL,
+      region_width INTEGER NOT NULL,
+      region_height INTEGER NOT NULL,
+      confidence REAL DEFAULT 0,
+      label TEXT,
+      is_manual INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (screenshot_id) REFERENCES screenshots(id) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_screenshots_url_id ON screenshots(url_id);
     CREATE INDEX IF NOT EXISTS idx_screenshots_created_at ON screenshots(created_at);
+    CREATE INDEX IF NOT EXISTS idx_screenshots_type ON screenshots(type);
+    CREATE INDEX IF NOT EXISTS idx_screenshots_parent_id ON screenshots(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_regions_screenshot_id ON screenshot_regions(screenshot_id);
+    CREATE INDEX IF NOT EXISTS idx_regions_strategy ON screenshot_regions(strategy);
   `);
 
   const wrappedDb = {

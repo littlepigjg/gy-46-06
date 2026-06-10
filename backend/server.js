@@ -5,6 +5,13 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import getDb from './db.js';
 import { startScheduler, triggerScreenshotNow } from './scheduler.js';
+import {
+  getScreenshotRegions,
+  updateManualRegion,
+  reAnalyzeScreenshot,
+  createCroppedScreenshot
+} from './screenshot.js';
+import { STRATEGIES, STRATEGY_LABELS } from './regionDetector.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -154,6 +161,174 @@ app.get('/api/urls/:id', async (req, res) => {
     return res.status(404).json({ error: 'URL不存在' });
   }
   res.json(url);
+});
+
+app.get('/api/strategies', async (req, res) => {
+  res.json({
+    strategies: Object.values(STRATEGIES).map(s => ({
+      id: s,
+      label: STRATEGY_LABELS[s]
+    }))
+  });
+});
+
+app.get('/api/screenshots/:id/regions', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const regions = await getScreenshotRegions(parseInt(id));
+    res.json(regions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/screenshots/:id/region', async (req, res) => {
+  const { id } = req.params;
+  const { region_x, region_y, region_width, region_height } = req.body;
+
+  if (region_x === undefined || region_y === undefined ||
+      region_width === undefined || region_height === undefined) {
+    return res.status(400).json({ error: '区域参数不完整' });
+  }
+
+  if (region_width < 50 || region_height < 50) {
+    return res.status(400).json({ error: '区域尺寸不能小于50x50' });
+  }
+
+  try {
+    const screenshotId = parseInt(id);
+    const db = await getDb();
+    const screenshot = db.prepare('SELECT * FROM screenshots WHERE id = ?').get(screenshotId);
+    if (!screenshot) {
+      return res.status(404).json({ error: '截图不存在' });
+    }
+
+    const parentId = screenshot.parent_id || screenshotId;
+    const result = await updateManualRegion(parentId, {
+      region_x: Math.round(region_x),
+      region_y: Math.round(region_y),
+      region_width: Math.round(region_width),
+      region_height: Math.round(region_height),
+      is_manual: true
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/screenshots/:id/reanalyze', async (req, res) => {
+  const { id } = req.params;
+  const { strategy = STRATEGIES.HYBRID } = req.body || {};
+
+  if (!Object.values(STRATEGIES).includes(strategy)) {
+    return res.status(400).json({ error: '无效的策略' });
+  }
+
+  try {
+    const screenshotId = parseInt(id);
+    const db = await getDb();
+    const screenshot = db.prepare('SELECT * FROM screenshots WHERE id = ?').get(screenshotId);
+    if (!screenshot) {
+      return res.status(404).json({ error: '截图不存在' });
+    }
+
+    const parentId = screenshot.parent_id || screenshotId;
+    const result = await reAnalyzeScreenshot(parentId, strategy);
+
+    const primaryRegion = result.regions?.[0];
+    let smartScreenshot = null;
+    if (primaryRegion) {
+      smartScreenshot = await createCroppedScreenshot(parentId, {
+        ...primaryRegion,
+        is_manual: false
+      });
+    }
+
+    res.json({
+      ...result,
+      smartScreenshot
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/screenshots/:id/crop', async (req, res) => {
+  const { id } = req.params;
+  const { region_x, region_y, region_width, region_height, strategy = 'manual' } = req.body;
+
+  if (region_x === undefined || region_y === undefined ||
+      region_width === undefined || region_height === undefined) {
+    return res.status(400).json({ error: '区域参数不完整' });
+  }
+
+  try {
+    const result = await createCroppedScreenshot(parseInt(id), {
+      region_x: Math.round(region_x),
+      region_y: Math.round(region_y),
+      region_width: Math.round(region_width),
+      region_height: Math.round(region_height),
+      strategy,
+      is_manual: strategy === 'manual'
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/urls/:id/screenshots-grouped', async (req, res) => {
+  const { id } = req.params;
+  const db = await getDb();
+  const screenshots = db.prepare(`
+    SELECT * FROM screenshots
+    WHERE url_id = ?
+    ORDER BY created_at DESC
+  `).all(id);
+
+  const grouped = [];
+  const fullpageMap = new Map();
+
+  screenshots.forEach(s => {
+    if (s.type === 'fullpage') {
+      fullpageMap.set(s.id, {
+        ...s,
+        smartVersions: []
+      });
+    }
+  });
+
+  screenshots.forEach(s => {
+    if (s.type === 'smart' && s.parent_id && fullpageMap.has(s.parent_id)) {
+      fullpageMap.get(s.parent_id).smartVersions.push(s);
+    }
+  });
+
+  const result = Array.from(fullpageMap.values()).sort((a, b) => {
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
+
+  res.json(result);
+});
+
+app.put('/api/urls/:id/default-strategy', async (req, res) => {
+  const { id } = req.params;
+  const { strategy } = req.body;
+
+  if (!Object.values(STRATEGIES).includes(strategy)) {
+    return res.status(400).json({ error: '无效的策略' });
+  }
+
+  const db = await getDb();
+  const existing = db.prepare('SELECT * FROM urls WHERE id = ?').get(id);
+  if (!existing) {
+    return res.status(404).json({ error: 'URL不存在' });
+  }
+
+  db.prepare('UPDATE urls SET default_strategy = ? WHERE id = ?').run(strategy, id);
+  const updated = db.prepare('SELECT * FROM urls WHERE id = ?').get(id);
+  res.json(updated);
 });
 
 app.listen(PORT, async () => {

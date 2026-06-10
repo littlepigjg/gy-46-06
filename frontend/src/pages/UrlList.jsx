@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
-import { getUrls, addUrl, deleteUrl, triggerScreenshot } from '../api.js'
+import { getUrls, addUrl, deleteUrl, triggerScreenshot, getStrategies } from '../api.js'
 
 const FREQUENCY_LABELS = {
   hourly: '每小时',
@@ -10,13 +10,26 @@ const FREQUENCY_LABELS = {
   monthly: '每月'
 }
 
+const STRATEGY_LABELS = {
+  dom: 'DOM结构提取',
+  visual: '视觉密度识别',
+  hybrid: '智能综合分割'
+}
+
 export default function UrlList() {
   const [urls, setUrls] = useState([])
   const [showAddForm, setShowAddForm] = useState(false)
-  const [formData, setFormData] = useState({ url: '', name: '', frequency: 'daily' })
+  const [formData, setFormData] = useState({ url: '', name: '', frequency: 'daily', default_strategy: 'hybrid' })
+  const [strategies, setStrategies] = useState([])
   const [loading, setLoading] = useState(false)
   const [screenshottingId, setScreenshottingId] = useState(null)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    getStrategies().then(res => {
+      setStrategies(res.data?.strategies || [])
+    }).catch(() => {})
+  }, [])
 
   const loadUrls = async () => {
     try {
@@ -122,6 +135,25 @@ export default function UrlList() {
                 <option value="monthly">每月</option>
               </select>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">默认识别策略</label>
+              <select
+                value={formData.default_strategy}
+                onChange={(e) => setFormData({ ...formData, default_strategy: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {strategies.length > 0 ? strategies.map(s => (
+                  <option key={s.id} value={s.id}>{s.label}</option>
+                )) : (
+                  <>
+                    <option value="hybrid">智能综合分割 (推荐)</option>
+                    <option value="dom">DOM结构提取</option>
+                    <option value="visual">视觉密度识别</option>
+                  </>
+                )}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">智能综合分割会结合DOM结构和视觉密度两种方式，推荐使用</p>
+            </div>
             <div className="flex gap-3 pt-2">
               <button
                 type="submit"
@@ -159,9 +191,12 @@ export default function UrlList() {
                     {item.name}
                   </h3>
                   <p className="text-sm text-gray-500 mt-1 truncate">{item.url}</p>
-                  <div className="flex items-center gap-4 mt-3 text-sm">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-sm">
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                       {FREQUENCY_LABELS[item.frequency]}
+                    </span>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                      {STRATEGY_LABELS[item.default_strategy] || item.default_strategy || '智能综合'}
                     </span>
                     <span className="text-gray-500">
                       截图数: <span className="font-medium text-gray-700">{item.screenshot_count}</span>

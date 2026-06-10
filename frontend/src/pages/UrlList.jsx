@@ -2,18 +2,13 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { getUrls, addUrl, deleteUrl, triggerScreenshot, getStrategies } from '../api.js'
+import { getStrategyLabel } from '../constants/strategies.js'
 
 const FREQUENCY_LABELS = {
   hourly: '每小时',
   daily: '每天',
   weekly: '每周',
   monthly: '每月'
-}
-
-const STRATEGY_LABELS = {
-  dom: 'DOM结构提取',
-  visual: '视觉密度识别',
-  hybrid: '智能综合分割'
 }
 
 export default function UrlList() {
@@ -196,7 +191,7 @@ export default function UrlList() {
                       {FREQUENCY_LABELS[item.frequency]}
                     </span>
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                      {STRATEGY_LABELS[item.default_strategy] || item.default_strategy || '智能综合'}
+                      {getStrategyLabel(item.default_strategy)}
                     </span>
                     <span className="text-gray-500">
                       截图数: <span className="font-medium text-gray-700">{item.screenshot_count}</span>

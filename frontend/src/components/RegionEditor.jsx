@@ -1,4 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import {
+  STRATEGY_LABELS,
+  STRATEGY_COLORS,
+  getStrategyLabel,
+  getStrategyColor
+} from '../constants/strategies.js'
+import { calculateMegaPixels } from '../utils/screenshot.js'
 
 const MIN_SIZE = 50
 const HANDLE_SIZE = 10
@@ -144,26 +151,6 @@ export default function RegionEditor({
     }
   }, [dragging, handleMouseMove, handleMouseUp])
 
-  const getStrategyColor = (strategy) => {
-    const colors = {
-      dom: '#3b82f6',
-      visual: '#10b981',
-      hybrid: '#8b5cf6',
-      manual: '#f59e0b'
-    }
-    return colors[strategy] || '#6b7280'
-  }
-
-  const getStrategyLabel = (strategy) => {
-    const labels = {
-      dom: 'DOM结构',
-      visual: '视觉密度',
-      hybrid: '智能综合',
-      manual: '手动调整'
-    }
-    return labels[strategy] || strategy
-  }
-
   const scaledStyle = (val) => val * scale
 
   return (
@@ -175,7 +162,7 @@ export default function RegionEditor({
             X: {region.region_x}, Y: {region.region_y}, W: {region.region_width}, H: {region.region_height}
           </span>
           <span className="ml-3 text-gray-500">
-            ({(region.region_width * region.region_height / 1000000).toFixed(2)} MP)
+            ({calculateMegaPixels(region.region_width, region.region_height)} MP)
           </span>
         </div>
         <div className="flex gap-2">
@@ -290,19 +277,19 @@ export default function RegionEditor({
         <div className="text-xs text-gray-500 mb-2">识别策略图例：</div>
         <div className="flex gap-4 flex-wrap text-xs">
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#3b82f6' }}></div>
-            <span className="text-gray-600">DOM结构提取</span>
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: STRATEGY_COLORS.dom }}></div>
+            <span className="text-gray-600">{STRATEGY_LABELS.dom}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#10b981' }}></div>
-            <span className="text-gray-600">视觉密度识别</span>
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: STRATEGY_COLORS.visual }}></div>
+            <span className="text-gray-600">{STRATEGY_LABELS.visual}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#8b5cf6' }}></div>
-            <span className="text-gray-600">智能综合分割</span>
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: STRATEGY_COLORS.hybrid }}></div>
+            <span className="text-gray-600">{STRATEGY_LABELS.hybrid}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: '#f59e0b' }}></div>
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: STRATEGY_COLORS.manual }}></div>
             <span className="text-gray-600">手动调整</span>
           </div>
         </div>

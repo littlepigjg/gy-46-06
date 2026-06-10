@@ -11,18 +11,8 @@ import {
 } from '../api.js'
 import ImageCompare from '../components/ImageCompare.jsx'
 import SmartViewer from '../components/SmartViewer.jsx'
-
-function getScreenshotUrl(filePath) {
-  const idx = filePath.indexOf('screenshots')
-  if (idx === -1) return ''
-  return '/' + filePath.slice(idx).replace(/\\/g, '/')
-}
-
-const STRATEGY_LABELS = {
-  dom: 'DOM结构提取',
-  visual: '视觉密度识别',
-  hybrid: '智能综合分割'
-}
+import { getStrategyLabel } from '../constants/strategies.js'
+import { getScreenshotUrl } from '../utils/screenshot.js'
 
 export default function ScreenshotTimeline() {
   const { id } = useParams()
@@ -350,7 +340,7 @@ export default function ScreenshotTimeline() {
                                 智能
                               </div>
                               <div className="absolute top-1 right-1 px-1.5 py-0.5 text-[9px] text-white bg-emerald-600/90 rounded">
-                                {STRATEGY_LABELS[smartPreview.strategy]?.substring(0, 2) || smartPreview.strategy}
+                                {getStrategyLabel(smartPreview.strategy).substring(0, 2)}
                               </div>
                             </div>
                             <div className="absolute top-1 left-1/2 -translate-x-1/2 w-1 h-full bg-white/80 shadow-md pointer-events-none"></div>
@@ -394,7 +384,7 @@ export default function ScreenshotTimeline() {
                                     : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                 }`}
                               >
-                                {STRATEGY_LABELS[sv.strategy]?.substring(0, 4) || sv.strategy}
+                                {getStrategyLabel(sv.strategy).substring(0, 4)}
                                 {sv.is_manual_region && ' (手)'}
                               </span>
                             ))}

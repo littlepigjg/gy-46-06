@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --experimental-vm-modules --test tests/",
+    "test:strategies": "node --experimental-vm-modules tests/strategies.test.js",
+    "test:screenshot": "node --experimental-vm-modules tests/screenshot.test.js"
   },
   "dependencies": {
     "axios": "^1.7.7",

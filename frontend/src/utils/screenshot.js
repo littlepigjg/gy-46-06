@@ -6,11 +6,12 @@ export function getScreenshotUrl(filePath) {
 }
 
 export function formatFileSize(bytes) {
-  if (!bytes) return '0 B'
+  const numBytes = Number(bytes)
+  if (!numBytes || isNaN(numBytes) || numBytes < 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  const i = Math.min(Math.floor(Math.log(numBytes) / Math.log(k)), sizes.length - 1)
+  return parseFloat((numBytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 export function calculateMegaPixels(width, height) {

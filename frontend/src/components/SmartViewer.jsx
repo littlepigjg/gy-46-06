@@ -26,7 +26,7 @@ import {
 
 export default function SmartViewer({
   screenshot,
-  smartVersions = [],
+  smartVersions: propSmartVersions = [],
   onClose,
   onSmartCreated = null,
   urlInfo = null
@@ -41,25 +41,64 @@ export default function SmartViewer({
   const [reanalyzing, setReanalyzing] = useState(false)
   const [savingRegion, setSavingRegion] = useState(false)
   const [autoAnalyzing, setAutoAnalyzing] = useState(false)
+  const [localSmartVersions, setLocalSmartVersions] = useState([])
+  const [analyzeProgress, setAnalyzeProgress] = useState('初始化...')
 
   const isInitialized = useRef(false)
+  const strategySwitchingRef = useRef(false)
 
   const fullpageId = screenshot?.parent_id || screenshot?.id
 
+  const allSmartVersions = [...localSmartVersions, ...propSmartVersions].reduce((acc, s) => {
+    if (!acc.find(item => item.id === s.id)) {
+      acc.push(s)
+    }
+    return acc
+  }, [])
+
   const selectedSmart = (selectedSmartId
-    ? smartVersions.find(s => s.id === selectedSmartId)
-    : null) || findSmartByStrategy(smartVersions, selectedStrategy)
+    ? allSmartVersions.find(s => s.id === selectedSmartId)
+    : null) || findSmartByStrategy(allSmartVersions, selectedStrategy)
+
+  useEffect(() => {
+    setLocalSmartVersions([])
+    setSelectedSmartId(null)
+  }, [fullpageId])
+
+  const addOrUpdateSmart = useCallback((smartShot) => {
+    setLocalSmartVersions(prev => {
+      const existing = prev.find(s => s.id === smartShot.id)
+      if (existing) {
+        return prev.map(s => s.id === smartShot.id ? smartShot : s)
+      }
+      return [...prev, smartShot]
+    })
+  }, [])
 
   const performReAnalyze = useCallback(async (strategy, isAuto = false) => {
-    if (isAuto) setAutoAnalyzing(true)
-    else setReanalyzing(true)
+    if (isAuto) {
+      setAutoAnalyzing(true)
+    } else {
+      setReanalyzing(true)
+    }
+    setAnalyzeProgress('正在访问页面并分析结构...')
 
     try {
+      setAnalyzeProgress('正在识别内容区域...')
       const res = await reAnalyzeScreenshot(fullpageId, strategy)
+
+      setAnalyzeProgress('正在生成裁剪图...')
       await loadRegions()
-      if (res.data?.smartScreenshot && onSmartCreated) {
-        onSmartCreated(res.data.smartScreenshot)
+
+      if (res.data?.smartScreenshot) {
+        const newSmart = res.data.smartScreenshot
+        addOrUpdateSmart(newSmart)
+        if (onSmartCreated) {
+          onSmartCreated(newSmart)
+        }
+        setSelectedSmartId(newSmart.id)
       }
+
       if (res.data?.regions?.[0]) {
         const r = res.data.regions[0]
         setCurrentRegion({
@@ -69,17 +108,25 @@ export default function SmartViewer({
           region_height: r.region_height
         })
       }
+
+      setAnalyzeProgress('完成')
+      setTimeout(() => setAnalyzeProgress(''), 500)
     } catch (err) {
+      setAnalyzeProgress('识别失败')
       if (!isAuto) {
         alert('重新识别失败: ' + err.message)
       } else {
         console.error('自动识别失败:', err)
       }
+      setTimeout(() => setAnalyzeProgress(''), 2000)
     } finally {
-      if (isAuto) setAutoAnalyzing(false)
-      else setReanalyzing(false)
+      if (isAuto) {
+        setAutoAnalyzing(false)
+      } else {
+        setReanalyzing(false)
+      }
     }
-  }, [fullpageId, onSmartCreated])
+  }, [fullpageId, onSmartCreated, addOrUpdateSmart])
 
   const loadRegions = useCallback(async () => {
     setLoadingRegions(true)
@@ -111,10 +158,13 @@ export default function SmartViewer({
       return
     }
 
-    const hasSmart = hasStrategySmart(smartVersions, selectedStrategy)
+    strategySwitchingRef.current = true
+
+    const hasSmart = hasStrategySmart(allSmartVersions, selectedStrategy)
     const hasRegions = hasStrategyRegions(allRegions, selectedStrategy)
 
     if (!hasSmart && !hasRegions) {
+      setSelectedSmartId(null)
       performReAnalyze(selectedStrategy, true)
     } else if (!hasSmart && hasRegions) {
       const region = findRegionByStrategy(allRegions, selectedStrategy)
@@ -126,10 +176,17 @@ export default function SmartViewer({
           region_height: region.region_height
         })
       }
+      setSelectedSmartId(null)
+    } else {
+      setSelectedSmartId(null)
     }
 
-    setSelectedSmartId(null)
-  }, [selectedStrategy, smartVersions, allRegions, performReAnalyze])
+    const timer = setTimeout(() => {
+      strategySwitchingRef.current = false
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [selectedStrategy, allSmartVersions, allRegions, performReAnalyze])
 
   useEffect(() => {
     if (selectedSmart) {
@@ -139,7 +196,7 @@ export default function SmartViewer({
         region_width: selectedSmart.region_width,
         region_height: selectedSmart.region_height
       })
-    } else {
+    } else if (!strategySwitchingRef.current) {
       const defaultRegion = findRegionByStrategy(allRegions, selectedStrategy)
       if (defaultRegion) {
         setCurrentRegion({
@@ -157,16 +214,18 @@ export default function SmartViewer({
     try {
       const res = await updateScreenshotRegion(fullpageId, region)
       await loadRegions()
+      const newSmart = res.data
+      addOrUpdateSmart(newSmart)
       if (onSmartCreated) {
-        onSmartCreated(res.data)
+        onSmartCreated(newSmart)
       }
       setCurrentRegion({
-        region_x: res.data.region_x,
-        region_y: res.data.region_y,
-        region_width: res.data.region_width,
-        region_height: res.data.region_height
+        region_x: newSmart.region_x,
+        region_y: newSmart.region_y,
+        region_width: newSmart.region_width,
+        region_height: newSmart.region_height
       })
-      setSelectedSmartId(res.data.id)
+      setSelectedSmartId(newSmart.id)
       setViewMode(VIEW_MODES.SMART)
       alert('区域保存成功！')
     } catch (err) {
@@ -186,24 +245,68 @@ export default function SmartViewer({
   }
 
   const getDisplayImage = () => {
-    if (viewMode === VIEW_MODES.SMART && selectedSmart) {
+    if (viewMode === VIEW_MODES.FULLPAGE) {
       return {
-        src: getScreenshotUrl(selectedSmart.file_path),
-        width: selectedSmart.width,
-        height: selectedSmart.height,
-        label: `智能裁剪 - ${getStrategyLabel(selectedSmart.strategy)}`
+        src: getScreenshotUrl(screenshot?.file_path || ''),
+        width: screenshot?.width || 1920,
+        height: screenshot?.height || 1080,
+        label: '全页截图',
+        isLoading: false,
+        isFullpage: true
       }
     }
+
+    if (viewMode === VIEW_MODES.SMART) {
+      if (selectedSmart) {
+        return {
+          src: getScreenshotUrl(selectedSmart.file_path),
+          width: selectedSmart.width,
+          height: selectedSmart.height,
+          label: `智能裁剪 - ${getStrategyLabel(selectedSmart.strategy)}`,
+          isLoading: false,
+          isFullpage: false,
+          isManual: selectedSmart.is_manual_region,
+          region: selectedSmart
+        }
+      }
+      if (autoAnalyzing || reanalyzing) {
+        return {
+          src: getScreenshotUrl(screenshot?.file_path || ''),
+          width: screenshot?.width || 1920,
+          height: screenshot?.height || 1080,
+          label: `智能裁剪 - ${getStrategyLabel(selectedStrategy)} (生成中...)`,
+          isLoading: true,
+          isFullpage: false,
+          pendingStrategy: selectedStrategy
+        }
+      }
+      if (currentRegion) {
+        return {
+          src: getScreenshotUrl(screenshot?.file_path || ''),
+          width: currentRegion.region_width,
+          height: currentRegion.region_height,
+          label: `智能裁剪 - ${getStrategyLabel(selectedStrategy)} (区域预览)`,
+          isLoading: false,
+          isFullpage: false,
+          isPreview: true,
+          region: currentRegion
+        }
+      }
+    }
+
     return {
       src: getScreenshotUrl(screenshot?.file_path || ''),
       width: screenshot?.width || 1920,
       height: screenshot?.height || 1080,
-      label: '全页截图'
+      label: '全页截图',
+      isLoading: false,
+      isFullpage: true
     }
   }
 
   const displayImg = getDisplayImage()
   const isBusy = reanalyzing || autoAnalyzing || savingRegion || loadingRegions
+  const totalSmartCount = allSmartVersions.length
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex flex-col">
@@ -245,8 +348,8 @@ export default function SmartViewer({
             }`}
           >
             智能裁剪
-            {smartVersions.length > 0 && (
-              <span className="ml-1.5 bg-gray-600 text-xs px-1.5 rounded-full">{smartVersions.length}</span>
+            {totalSmartCount > 0 && (
+              <span className="ml-1.5 bg-gray-600 text-xs px-1.5 rounded-full">{totalSmartCount}</span>
             )}
           </button>
           <button
@@ -270,14 +373,14 @@ export default function SmartViewer({
               value={selectedStrategy}
               onChange={(e) => setSelectedStrategy(e.target.value)}
               disabled={isBusy}
-              className="bg-gray-700 text-white text-sm rounded-lg pl-3 pr-8 py-1.5 border border-gray-600 focus:outline-none focus:border-blue-500 disabled:opacity-60 appearance-none cursor-pointer"
+              className="bg-gray-700 text-white text-sm rounded-lg pl-3 pr-10 py-1.5 border border-gray-600 focus:outline-none focus:border-blue-500 disabled:opacity-60 appearance-none cursor-pointer"
             >
               {strategies.map(s => (
                 <option key={s.id} value={s.id}>{s.label}</option>
               ))}
             </select>
-            {autoAnalyzing && (
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 border-2 border-gray-500 border-t-white rounded-full animate-spin"></div>
+            {isBusy && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 border-2 border-gray-500 border-t-white rounded-full animate-spin"></div>
             )}
           </div>
           <button
@@ -301,7 +404,7 @@ export default function SmartViewer({
           </button>
         </div>
 
-        {viewMode === VIEW_MODES.SMART && smartVersions.length > 1 && (
+        {viewMode === VIEW_MODES.SMART && totalSmartCount > 1 && (
           <>
             <div className="h-6 w-px bg-gray-600"></div>
             <div className="flex items-center gap-2">
@@ -311,11 +414,11 @@ export default function SmartViewer({
                 onChange={(e) => setSelectedSmartId(parseInt(e.target.value))}
                 className="bg-gray-700 text-white text-sm rounded-lg px-3 py-1.5 border border-gray-600 focus:outline-none focus:border-blue-500"
               >
-                {smartVersions.map(s => (
+                {allSmartVersions.map(s => (
                   <option key={s.id} value={s.id}>
                     {getStrategyLabel(s.strategy)}
                     {s.is_manual_region ? ' (手动)' : ''}
-                    {s.strategy === selectedSmart?.strategy && !s.is_manual_region ? ' ✓' : ''}
+                    {s.id === selectedSmartId || (s.strategy === selectedStrategy && !selectedSmartId && !s.is_manual_region) ? ' ✓' : ''}
                   </option>
                 ))}
               </select>
@@ -333,11 +436,12 @@ export default function SmartViewer({
         </div>
       </div>
 
-      {autoAnalyzing && viewMode !== VIEW_MODES.EDIT && (
+      {(autoAnalyzing || reanalyzing) && viewMode !== VIEW_MODES.EDIT && (
         <div className="bg-emerald-900/50 border-b border-emerald-700/50 px-6 py-2 flex items-center gap-2">
           <div className="w-3 h-3 border-2 border-emerald-400/40 border-t-emerald-300 rounded-full animate-spin"></div>
           <span className="text-sm text-emerald-200">
-            正在使用「{getStrategyLabel(selectedStrategy)}」策略识别内容区域...
+            正在使用「{getStrategyLabel(selectedStrategy)}」策略
+            {analyzeProgress ? ` - ${analyzeProgress}` : '识别内容区域...'}
           </span>
         </div>
       )}
@@ -355,7 +459,7 @@ export default function SmartViewer({
               onRegionChange={setCurrentRegion}
               onSave={handleSaveRegion}
               onCancel={() => {
-                setViewMode(selectedSmart ? VIEW_MODES.SMART : VIEW_MODES.FULLPAGE)
+                setViewMode(selectedSmart ? VIEW_MODES.SMART : VIEW_MODES.SMART)
               }}
               disabled={savingRegion}
               regions={allRegions.filter(r => r.strategy === selectedStrategy)}
@@ -410,27 +514,88 @@ export default function SmartViewer({
           <div className="relative">
             <div className="text-xs text-gray-500 mb-2 text-center">
               {displayImg.label}
-              {autoAnalyzing && <span className="ml-2 text-emerald-400">(识别中...)</span>}
+              {displayImg.isLoading && <span className="ml-2 text-emerald-400">(生成中...)</span>}
+              {displayImg.isPreview && <span className="ml-2 text-amber-400">(预览)</span>}
             </div>
-            <img
-              src={displayImg.src}
-              alt={displayImg.label}
-              className={`max-w-full object-contain transition-opacity ${autoAnalyzing ? 'opacity-60' : ''}`}
-              style={{ maxHeight: 'calc(100vh - 220px)' }}
-              onClick={(e) => e.stopPropagation()}
-            />
-            {viewMode === VIEW_MODES.SMART && selectedSmart && (
-              <div className="mt-2 text-xs text-gray-400 text-center">
-                裁剪区域: {formatRegion(selectedSmart)}
-                {selectedSmart.is_manual_region && <span className="ml-2 text-amber-400">(手动调整)</span>}
-              </div>
-            )}
-            {viewMode === VIEW_MODES.SMART && autoAnalyzing && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded">
-                <div className="bg-gray-900/90 px-4 py-2 rounded-lg flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-emerald-400/40 border-t-emerald-300 rounded-full animate-spin"></div>
-                  <span className="text-sm text-white">正在生成智能裁剪图...</span>
+
+            {displayImg.isLoading ? (
+              <div
+                className="relative bg-gray-900 border border-gray-700 rounded overflow-hidden"
+                style={{
+                  width: Math.min(displayImg.width, 1200),
+                  maxWidth: '100%',
+                  aspectRatio: displayImg.width && displayImg.height
+                    ? `${displayImg.width} / ${displayImg.height}`
+                    : '16 / 9'
+                }}
+              >
+                <img
+                  src={displayImg.src}
+                  alt="loading preview"
+                  className="w-full h-full object-cover object-top opacity-30"
+                  style={{ filter: 'blur(4px)' }}
+                />
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
+                  <div className="bg-gray-800/90 px-6 py-4 rounded-xl flex flex-col items-center gap-3 border border-gray-600">
+                    <div className="w-8 h-8 border-3 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin"></div>
+                    <div className="text-center">
+                      <div className="text-sm text-white font-medium">
+                        正在生成「{getStrategyLabel(displayImg.pendingStrategy)}」裁剪图
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        {analyzeProgress || '分析页面结构中...'}
+                      </div>
+                    </div>
+                    <div className="w-48 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full animate-pulse" style={{ width: '70%' }}></div>
+                    </div>
+                  </div>
                 </div>
+              </div>
+            ) : displayImg.isPreview ? (
+              <div
+                className="relative bg-gray-900 border-2 border-dashed border-amber-500/60 rounded overflow-hidden"
+                style={{ maxWidth: '100%', maxHeight: 'calc(100vh - 260px)' }}
+              >
+                <div
+                  style={{
+                    position: 'relative',
+                    width: displayImg.region.region_width,
+                    maxWidth: '100%',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <img
+                    src={displayImg.src}
+                    alt="region preview"
+                    className="block"
+                    style={{
+                      maxWidth: 'none',
+                      width: screenshot?.width,
+                      height: 'auto',
+                      marginLeft: -displayImg.region.region_x,
+                      marginTop: -displayImg.region.region_y
+                    }}
+                  />
+                </div>
+                <div className="absolute top-2 left-2 bg-amber-500/90 text-white text-xs px-2 py-1 rounded">
+                  区域预览 - 点击"重新识别"或切换策略生成裁剪图
+                </div>
+              </div>
+            ) : (
+              <img
+                src={displayImg.src}
+                alt={displayImg.label}
+                className="max-w-full object-contain"
+                style={{ maxHeight: 'calc(100vh - 260px)' }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
+
+            {viewMode === VIEW_MODES.SMART && displayImg.region && !displayImg.isLoading && (
+              <div className="mt-2 text-xs text-gray-400 text-center">
+                裁剪区域: {formatRegion(displayImg.region)}
+                {displayImg.isManual && <span className="ml-2 text-amber-400">(手动调整)</span>}
               </div>
             )}
           </div>

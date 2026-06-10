@@ -6,7 +6,10 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test": "node --experimental-vm-modules --test tests/",
+    "test:strategies": "node --experimental-vm-modules tests/regionDetector.test.js",
+    "test:db": "node --experimental-vm-modules tests/db.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

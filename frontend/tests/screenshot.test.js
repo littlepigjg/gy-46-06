@@ -94,9 +94,9 @@ test('findSmartByStrategy preferNonManual=false 时返回第一个匹配', () =>
   assert.equal(result.id, 1)
 })
 
-test('findSmartByStrategy 找不到指定策略时返回第一个', () => {
+test('findSmartByStrategy 找不到指定策略时返回 null', () => {
   const result = findSmartByStrategy(mockSmartVersions, 'nonexistent')
-  assert.equal(result.id, 1)
+  assert.equal(result, null)
 })
 
 test('findSmartByStrategy 处理空数组', () => {

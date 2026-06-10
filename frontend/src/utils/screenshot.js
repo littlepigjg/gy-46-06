@@ -32,7 +32,7 @@ export function findSmartByStrategy(smartVersions, strategy, preferNonManual = t
     if (match) return match
   }
 
-  return smartVersions.find(s => s.strategy === strategy) || smartVersions[0]
+  return smartVersions.find(s => s.strategy === strategy) || null
 }
 
 export function findRegionByStrategy(regions, strategy) {

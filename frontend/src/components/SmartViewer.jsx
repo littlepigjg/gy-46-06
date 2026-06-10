@@ -46,6 +46,7 @@ export default function SmartViewer({
 
   const isInitialized = useRef(false)
   const strategySwitchingRef = useRef(false)
+  const pendingSmartIdRef = useRef(null)
 
   const fullpageId = screenshot?.parent_id || screenshot?.id
 
@@ -56,9 +57,15 @@ export default function SmartViewer({
     return acc
   }, [])
 
-  const selectedSmart = (selectedSmartId
+  const selectedSmartById = selectedSmartId
     ? allSmartVersions.find(s => s.id === selectedSmartId)
-    : null) || findSmartByStrategy(allSmartVersions, selectedStrategy)
+    : null
+
+  const selectedSmartByStrategy = findSmartByStrategy(allSmartVersions, selectedStrategy)
+
+  const selectedSmart = selectedSmartById || selectedSmartByStrategy
+
+  const isSmartSyncing = (selectedSmartId && !selectedSmartById) || (pendingSmartIdRef.current && !allSmartVersions.find(s => s.id === pendingSmartIdRef.current))
 
   useEffect(() => {
     setLocalSmartVersions([])
@@ -92,14 +99,19 @@ export default function SmartViewer({
 
       if (res.data?.smartScreenshot) {
         const newSmart = res.data.smartScreenshot
+        pendingSmartIdRef.current = newSmart.id
         addOrUpdateSmart(newSmart)
         if (onSmartCreated) {
           onSmartCreated(newSmart)
         }
         setSelectedSmartId(newSmart.id)
-      }
-
-      if (res.data?.regions?.[0]) {
+        setCurrentRegion({
+          region_x: newSmart.region_x,
+          region_y: newSmart.region_y,
+          region_width: newSmart.region_width,
+          region_height: newSmart.region_height
+        })
+      } else if (res.data?.regions?.[0]) {
         const r = res.data.regions[0]
         setCurrentRegion({
           region_x: r.region_x,
@@ -107,6 +119,7 @@ export default function SmartViewer({
           region_width: r.region_width,
           region_height: r.region_height
         })
+        setSelectedSmartId(null)
       }
 
       setAnalyzeProgress('完成')
@@ -189,6 +202,15 @@ export default function SmartViewer({
   }, [selectedStrategy, allSmartVersions, allRegions, performReAnalyze])
 
   useEffect(() => {
+    if (pendingSmartIdRef.current) {
+      const found = allSmartVersions.find(s => s.id === pendingSmartIdRef.current)
+      if (found) {
+        pendingSmartIdRef.current = null
+      }
+    }
+  }, [allSmartVersions])
+
+  useEffect(() => {
     if (selectedSmart) {
       setCurrentRegion({
         region_x: selectedSmart.region_x,
@@ -196,7 +218,7 @@ export default function SmartViewer({
         region_width: selectedSmart.region_width,
         region_height: selectedSmart.region_height
       })
-    } else if (!strategySwitchingRef.current) {
+    } else if (!strategySwitchingRef.current && !isSmartSyncing) {
       const defaultRegion = findRegionByStrategy(allRegions, selectedStrategy)
       if (defaultRegion) {
         setCurrentRegion({
@@ -207,7 +229,7 @@ export default function SmartViewer({
         })
       }
     }
-  }, [selectedSmart, allRegions, selectedStrategy])
+  }, [selectedSmart, allRegions, selectedStrategy, isSmartSyncing])
 
   const handleSaveRegion = async (region) => {
     setSavingRegion(true)
@@ -269,7 +291,7 @@ export default function SmartViewer({
           region: selectedSmart
         }
       }
-      if (autoAnalyzing || reanalyzing) {
+      if (autoAnalyzing || reanalyzing || isSmartSyncing) {
         return {
           src: getScreenshotUrl(screenshot?.file_path || ''),
           width: screenshot?.width || 1920,
